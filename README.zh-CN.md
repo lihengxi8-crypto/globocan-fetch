@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-`globocan-fetch` 是一个用于**可复现下载与整理 GLOBOCAN Cancer Today 表格估计数据**的 Python 命令行工具。它把 GCO 页面中可观察到的数据请求封装成小范围、可限速、可恢复的下载流程，并将人群和癌种元数据补充到结果中，便于后续用 R、Python、Stata 或 DuckDB 分析。
+`globocan-fetch` 是一个用于**可复现下载与整理 [GLOBOCAN Cancer Today](https://gco.iarc.who.int/today/) 表格估计数据**的 Python 命令行工具。它把 GCO 页面中可观察到的数据请求封装成小范围、可限速、可恢复的下载流程，并将人群和癌种元数据补充到结果中，便于后续用 R、Python、Stata 或 DuckDB 分析。
 
 > **项目状态：v0.1，研究用途。** 本项目使用的是从 GCO Cancer Today 网页应用观察到的请求路径，不应视为 IARC/WHO 承诺稳定的公开 API。开始正式项目或更新数据前，请先运行 `verify`；若网页、字段或使用条款变更，以官方网站为准。
 
@@ -19,27 +19,46 @@ GCO 网页可以交互式查看国家、癌种、性别、年龄段的指标，�
 
 本仓库**不包含，也不分发 GLOBOCAN 原始或全量下载数据**。
 
+## GLOBOCAN 网页端与本工具的关系
+
+GLOBOCAN 的官方入口是 [Cancer Today](https://gco.iarc.who.int/today/)，其中的 [表格页面](https://gco.iarc.who.int/today/en/dataviz/tables?mode=population) 适合可视化浏览、临时筛选、查看官方展示和最新使用条款。
+
+本工具**不是新的数据源，也不会改变 GLOBOCAN 的估计值**；结果来自 Cancer Today 网页应用所使用的数据响应。两者的区别在于：
+
+| 网页端 | `globocan-fetch` |
+| --- | --- |
+| 适合交互式查看与临时比较 | 适合批量、重复和可复现的查询 |
+| 在浏览器中手动选择筛选条件 | 用命令明确记录年份、指标、性别、癌种和年龄段 |
+| 以网页呈现为主 | 输出 CSV / Parquet，补充元数据，便于直接分析 |
+| 不保留一次查询的本地下载过程 | 用 `manifest.json` 记录参数、完成状态和文件哈希，可中断续跑 |
+
+接口是对网页应用的观察，并非 IARC/WHO 承诺稳定的公共 API。因此每个研究项目开始前应先运行 `verify`，并以官网页面、数据版本与使用条款为准。
+
 ## 安装
 
 建议创建独立环境：
 
 ```bash
-python -m venv .venv
-
 # macOS / Linux
-.venv/bin/python -m pip install -U pip
-.venv/bin/python -m pip install -e ".[parquet,dev]"
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -e ".[parquet]"
+```
 
+```powershell
 # Windows PowerShell
-.venv\Scripts\python -m pip install -U pip
-.venv\Scripts\python -m pip install -e ".[parquet,dev]"
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
+python -m pip install -e ".[parquet]"
 ```
 
 其中：
 
 - 基础依赖只有 `requests`；
 - 使用 `--format parquet` 需要 `pandas` 和 `pyarrow`；
-- `dev` 安装额外包含测试工具。
+- 如需运行项目测试，可将 `.[parquet]` 改为 `.[parquet,dev]`。
 
 安装完成后，以下两种调用等价：
 
@@ -200,12 +219,4 @@ GET https://gco.iarc.fr/gateway_prod/api/globocan/v3/{year}/data/rate/
 - 论文、报告和衍生数据库应引用 GCO 官方数据源，并写明数据版本和访问日期；需要时还应引用对应的 GLOBOCAN 学术文献。
 - 本工具与 IARC、WHO 或 GCO 没有隶属、认可或合作关系。
 
-## 开发与发布
-
-```bash
-python -m pytest
-python -m globocan_fetch.cli --help
-```
-
-首次发布 GitHub 前，请完成 [发布检查清单](docs/release-checklist.md)。建议在 README 顶部增加项目维护者、问题反馈渠道和推荐引用信息，并在 `CITATION.cff` 中替换你的 GitHub 仓库地址。
-
+如需了解接口路径和字段约定，请参阅 [docs/api-observations.md](docs/api-observations.md)。

@@ -1,6 +1,6 @@
 # globocan-fetch
 
-Reproducible, rate-limited downloads of GLOBOCAN Cancer Today tabular estimates, with population and cancer metadata added to the result.
+Reproducible, rate-limited downloads of [GLOBOCAN Cancer Today](https://gco.iarc.who.int/today/) tabular estimates, with population and cancer metadata added to the result.
 
 [中文说明](README.zh-CN.md)
 
@@ -16,15 +16,31 @@ Reproducible, rate-limited downloads of GLOBOCAN Cancer Today tabular estimates,
 
 It does **not** distribute GLOBOCAN data. Generated data and caches are ignored by Git.
 
+## Website and this tool
+
+The official [Cancer Today table view](https://gco.iarc.who.int/today/en/dataviz/tables?mode=population) is the right place to explore the estimates visually, change filters interactively, and consult the current official presentation and terms.
+
+`globocan-fetch` is not another data source and does not change the estimates: its values come from the responses used by the Cancer Today web application. It is useful when the same queries must be repeated or documented because it downloads selected combinations programmatically, stores analysis-ready CSV/Parquet files, adds metadata, rate-limits requests, and creates a resumable manifest. The observed web endpoint may change, so run `verify` before a project.
+
 ## Install
 
 ```bash
+# macOS / Linux
 python -m venv .venv
-.venv/bin/python -m pip install -U pip
-.venv/bin/python -m pip install -e ".[parquet,dev]"
+source .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -e ".[parquet]"
 ```
 
-On Windows, replace `.venv/bin/python` with `.venv\\Scripts\\python`.
+```powershell
+# Windows PowerShell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
+python -m pip install -e ".[parquet]"
+```
+
+After activation, `globocan-fetch` is available in the same terminal. Add `,dev` only if you want to run the project's tests.
 
 ## Start small
 
@@ -39,7 +55,7 @@ globocan-fetch download \
   --format parquet --output data/breast_female_2024
 ```
 
-The output contains `data.parquet` (or `data.csv`) and `manifest.json`.
+The output contains `tables/incidence_female_can20_a0-17.parquet` (or `.csv`) and `manifest.json`.
 
 ## Full download
 
@@ -73,11 +89,4 @@ The command manifest stores parameters, endpoint base, software version, metadat
 
 GLOBOCAN/IARC/WHO data and website materials have their own terms, attribution and redistribution conditions. This repository's MIT license covers **only this code**. Before sharing downloaded data, releases, or derivative databases, check the current GCO/IARC terms of use and cite the official GCO source.
 
-## Development
-
-```bash
-python -m pytest
-python -m globocan_fetch.cli --help
-```
-
-See [docs/api-observations.md](docs/api-observations.md) for the request model and [docs/release-checklist.md](docs/release-checklist.md) before publishing.
+For technical details of the observed request model, see [docs/api-observations.md](docs/api-observations.md).
