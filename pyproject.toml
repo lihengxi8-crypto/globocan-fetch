@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "globocan-fetch"
+version = "0.1.0"
+description = "A reproducible, rate-limited client for GLOBOCAN Cancer Today tabular estimates."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "GLOBOCAN Fetch contributors"}]
+dependencies = ["requests>=2.31"]
+keywords = ["globocan", "cancer", "iarc", "epidemiology"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+]
+
+[project.optional-dependencies]
+parquet = ["pandas>=2.0", "pyarrow>=14.0"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+globocan-fetch = "globocan_fetch.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
