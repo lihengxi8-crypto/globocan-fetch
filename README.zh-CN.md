@@ -161,41 +161,62 @@ globocan-fetch cancers --year 2024
 <!-- section: quick-start -->
 ## 4. 快速开始
 
-### 安装
+### 从 GitHub 安装
 
 建议使用 Python 3.10 或以上版本。
 
-macOS / Linux：
+目前 `globocan-fetch` 尚未通过 PyPI 发布，因此需要直接从 GitHub 仓库安装。
+
+首先下载项目代码并进入项目目录：
+
+```bash
+git clone https://github.com/lihengxi8-crypto/globocan-fetch.git
+cd globocan-fetch
+```
+
+然后创建独立的 Python 环境并安装本项目。
+
+### macOS / Linux
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
-python -m pip install -e ".[parquet]"
+python -m pip install ".[parquet]"
 ```
 
-Windows PowerShell：
+### Windows PowerShell
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -U pip
-python -m pip install -e ".[parquet]"
+python -m pip install ".[parquet]"
 ```
 
-检查 CLI：
+> `.` 表示安装“当前目录中的 Python 项目”。
+>
+> `[parquet]` 表示同时安装 Parquet 输出所需的可选依赖，例如 pandas 和 pyarrow。
+
+### 检查安装是否成功
 
 ```bash
 globocan-fetch --help
 ```
 
-在开始一个正式研究项目之前，建议先确认当前观察到的 endpoint 和 metadata 仍可使用：
+如果能够正常显示 CLI 帮助信息，就说明 `globocan-fetch` 已经安装到当前虚拟环境中。
+
+在开始一个正式研究项目之前，建议先确认当前观察到的 Cancer Today endpoint 和 metadata 仍可正常访问：
 
 ```bash
 globocan-fetch verify --year 2024
 globocan-fetch cancers --year 2024
 globocan-fetch populations --year 2024
 ```
+
+- `verify`：检查当前观察到的 Cancer Today endpoint 和 metadata 是否仍可正常访问；
+- `cancers`：查看当前年份可用的 cancer/site metadata；
+- `populations`：查看当前年份可用的人群 metadata。
 
 ### 第一次下载
 
@@ -226,6 +247,8 @@ globocan-fetch download \
 ```
 
 默认请求频率有意设置得较为保守。对于共享公共服务，不建议为了追求速度而大幅提高请求频率。
+
+下载后的文件会写入 `--output` 指定的输出目录，例如 `data/breast_female_2024/`；下一节说明该目录的内容。
 
 ---
 
@@ -808,6 +831,14 @@ CITATION.cff
 
 ---
 
+### 反馈与联系
+
+如果 `globocan-fetch` 对你的研究或学习有帮助，欢迎在 GitHub 上点一个 ⭐ Star，让更多需要 GLOBOCAN 数据的研究者能够发现这个项目。
+
+如果在使用过程中发现 bug、有使用上的疑问，或者有改进建议，欢迎提交 GitHub Issue，也可以通过邮件联系我：
+
+**Li Hengxi — lihengxi8@gmail.com**
+
 ## 开发
 
 安装开发依赖：
@@ -815,6 +846,8 @@ CITATION.cff
 ```bash
 python -m pip install -e ".[parquet,dev]"
 ```
+
+`-e` 表示 editable install，适合需要修改或开发项目代码的情况。
 
 运行测试：
 

@@ -143,41 +143,62 @@ Age groups use zero-based indices from `0` to `17`.
 <!-- section: quick-start -->
 ## 4. Quick start
 
-### Install
+### Install from GitHub
 
 Python 3.10 or newer is recommended.
 
-macOS / Linux:
+At present, `globocan-fetch` is installed directly from the GitHub repository rather than from PyPI.
+
+First clone the repository and enter the project directory:
+
+```bash
+git clone https://github.com/lihengxi8-crypto/globocan-fetch.git
+cd globocan-fetch
+```
+
+Then create an isolated Python environment and install the package.
+
+### macOS / Linux
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
-python -m pip install -e ".[parquet]"
+python -m pip install ".[parquet]"
 ```
 
-Windows PowerShell:
+### Windows PowerShell
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -U pip
-python -m pip install -e ".[parquet]"
+python -m pip install ".[parquet]"
 ```
 
-Check the CLI:
+> `.` means “install the Python project in the current directory”.
+>
+> `[parquet]` additionally installs the optional dependencies required for Parquet output, such as pandas and pyarrow.
+
+### Check the installation
 
 ```bash
 globocan-fetch --help
 ```
 
-Before starting a research project, verify that the currently observed endpoints and metadata are still usable:
+If the command prints the CLI help, the package has been installed successfully in the current virtual environment.
+
+Before starting a research project, verify that the currently observed Cancer Today endpoints and metadata are still accessible:
 
 ```bash
 globocan-fetch verify --year 2024
 globocan-fetch cancers --year 2024
 globocan-fetch populations --year 2024
 ```
+
+- `verify` checks whether the currently observed Cancer Today endpoints and metadata are still accessible.
+- `cancers` lists the available cancer/site metadata entries.
+- `populations` lists the available population metadata.
 
 ### First download
 
@@ -208,6 +229,8 @@ globocan-fetch download \
 ```
 
 The default request rate is deliberately conservative. Do not increase request frequency aggressively on shared public infrastructure.
+
+The downloaded files are written under the output directory provided with `--output`, such as `data/breast_female_2024/`. The next section explains its contents.
 
 ---
 
@@ -782,6 +805,14 @@ CITATION.cff
 
 ---
 
+### Feedback and contact
+
+If `globocan-fetch` is useful for your research or learning, consider giving the repository a ⭐ on GitHub. It helps others discover the project.
+
+If you find a bug, have a question about using the tool, or have suggestions for improvement, feel free to open a GitHub Issue or contact me by email:
+
+**Li Hengxi — lihengxi8@gmail.com**
+
 ## Development
 
 To install development dependencies:
@@ -789,6 +820,8 @@ To install development dependencies:
 ```bash
 python -m pip install -e ".[parquet,dev]"
 ```
+
+The `-e` flag installs the repository in editable mode, which is useful when developing or modifying the package.
 
 Run tests:
 
