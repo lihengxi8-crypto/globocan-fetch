@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 
 from .constants import GROUPING_TO_LEVEL
 
 
-def load_or_fetch(client, cache_dir: Path, refresh: bool = False) -> tuple[dict[int, dict], dict[int, dict]]:
+def load_or_fetch(client, cache_dir: Path, refresh: bool = False) -> tuple[dict[int, dict], dict[int, dict], dict]:
     cache_dir.mkdir(parents=True, exist_ok=True)
     pop_path, cancer_path = cache_dir / "populations.json", cache_dir / "cancers.json"
     if refresh or not pop_path.exists():
@@ -26,5 +27,6 @@ def load_or_fetch(client, cache_dir: Path, refresh: bool = False) -> tuple[dict[
             "income_label": raw.get("income_label"),
         }
     cancer_map = {int(raw["cancer"]): {"cancer_label": raw.get("label"), "ICD": raw.get("ICD")} for raw in cancers}
-    return pop_map, cancer_map
-
+    def digest(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    return pop_map, cancer_map, {"populations_sha256": digest(pop_path), "cancers_sha256": digest(cancer_path), "fetched_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()}

@@ -10,6 +10,7 @@ from . import __version__
 from .client import GCOClient, GCOError
 from .constants import SEX_CODES, TYPE_CODES, age_combinations
 from .metadata import load_or_fetch
+from .schema import data_dictionary_markdown
 from .writers import sha256, write_rows
 
 
@@ -40,7 +41,7 @@ def _load_manifest(output: Path) -> dict:
     path = _manifest_path(output)
     if path.exists():
         return json.loads(path.read_text(encoding="utf-8"))
-    return {"schema_version": 1, "software_version": __version__, "created_at": datetime.now(timezone.utc).isoformat(), "completed": [], "empty": [], "files": {}}
+    return {"schema_version": 2, "software_version": __version__, "created_at": datetime.now(timezone.utc).isoformat(), "completed": [], "empty": [], "files": {}}
 
 
 def _save_manifest(output: Path, manifest: dict) -> None:
@@ -49,6 +50,18 @@ def _save_manifest(output: Path, manifest: dict) -> None:
     temp = _manifest_path(output).with_suffix(".partial")
     temp.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     temp.replace(_manifest_path(output))
+
+
+def _identity(year: int, endpoint_base: str, output_format: str) -> dict:
+    return {"year": year, "endpoint_base": endpoint_base, "output_format": output_format, "schema_version": 2}
+
+
+def _ensure_identity(manifest: dict, identity: dict) -> None:
+    existing = manifest.get("dataset_identity")
+    if existing and existing != identity:
+        raise SystemExit("Existing output belongs to a different dataset configuration. Use a new output directory.")
+    if not existing and (manifest.get("completed") or manifest.get("empty") or manifest.get("files")):
+        raise SystemExit("Existing output has a legacy manifest without dataset identity. Use a new output directory.")
 
 
 def _rows(dataset: list[dict], pop_map: dict, cancer: dict, metric: str, sex: str, age: dict) -> list[dict]:
@@ -79,24 +92,65 @@ def cmd_cancers(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_populations(args: argparse.Namespace) -> int:
+    client = GCOClient(args.year, requests_per_second=args.rps)
+    pop_map, _, _ = load_or_fetch(client, Path(".globocan-fetch") / str(args.year), refresh=args.refresh_meta)
+    levels = sorted({row["pop_level"] for row in pop_map.values()})
+    if args.level and args.level not in levels:
+        raise SystemExit(f"Invalid --level {args.level}. Choose from: {', '.join(levels)}")
+    print("country_code\tpop_label\tiso3\tpop_level")
+    for code, row in sorted(pop_map.items()):
+        if not args.level or row["pop_level"] == args.level:
+            print(f"{code}\t{row.get('pop_label') or ''}\t{row.get('iso3') or ''}\t{row['pop_level']}")
+    return 0
+
+
+def cmd_inspect(args: argparse.Namespace) -> int:
+    output = Path(args.output_directory)
+    path = _manifest_path(output)
+    if not path.exists():
+        raise SystemExit(f"No manifest.json found in {output}. Pass a standard globocan-fetch output directory.")
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        raise SystemExit(f"Invalid manifest.json in {output}.")
+    identity = manifest.get("dataset_identity", {})
+    params = manifest.get("parameters", {})
+    missing = [name for name in manifest.get("files", {}) if not (output / name).exists()]
+    result = {"year": identity.get("year", manifest.get("year")), "software_version": manifest.get("software_version"), "endpoint": identity.get("endpoint_base", manifest.get("endpoint_base")), "format": identity.get("output_format", params.get("format")), "metrics": params.get("metrics", []), "sexes": params.get("sexes", []), "cancers": params.get("cancers", []), "age_ranges": [a.get("label") for a in params.get("ages", [])], "files_count": len(manifest.get("files", {})), "non_empty_tasks": len(manifest.get("completed", [])), "empty_tasks": len(manifest.get("empty", [])), "manifest_path": str(path), "missing_output_files": missing}
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_download(args: argparse.Namespace) -> int:
     if args.preset == "full":
         if not args.yes:
-            raise SystemExit("Full download needs --yes (8,856 requests at current dimensions).")
+            raise SystemExit("Full download needs --yes.")
         metrics, sexes, ages = list(TYPE_CODES), list(SEX_CODES), age_combinations()
     else:
         metrics, sexes, ages = _split(args.metric, TYPE_CODES, "--metric"), _split(args.sex, SEX_CODES, "--sex"), _ages(args.age)
     output = Path(args.output)
     client = GCOClient(args.year, requests_per_second=args.rps, timeout=args.timeout, retries=args.retries)
     cache_dir = output / ".globocan-fetch" / "meta"
-    pop_map, cancer_map = load_or_fetch(client, cache_dir, refresh=args.refresh_meta)
+    pop_map, cancer_map, metadata_info = load_or_fetch(client, cache_dir, refresh=args.refresh_meta)
     requested_cancers = [int(v) for v in args.cancer.split(",")] if args.preset != "full" else sorted(cancer_map)
     unknown = sorted(set(requested_cancers) - set(cancer_map))
     if unknown:
         raise SystemExit(f"Unknown cancer codes: {unknown}. Run `globocan-fetch cancers --year {args.year}`.")
     tasks = [(metric, sex, code, age) for metric in metrics for sex in sexes for code in requested_cancers for age in ages]
     manifest = _load_manifest(output)
-    manifest.update({"year": args.year, "endpoint_base": client.base_url, "parameters": {"metrics": metrics, "sexes": sexes, "cancers": requested_cancers, "ages": ages, "format": args.format, "rps": args.rps}})
+    identity = _identity(args.year, client.base_url, args.format)
+    _ensure_identity(manifest, identity)
+    old_metadata = manifest.get("metadata")
+    if old_metadata and (old_metadata["populations_sha256"] != metadata_info["populations_sha256"] or old_metadata["cancers_sha256"] != metadata_info["cancers_sha256"]) and (manifest.get("completed") or manifest.get("empty")):
+        raise SystemExit("Metadata changed for an existing output. Use a new output directory.")
+    manifest.update({"schema_version": 2, "dataset_identity": identity, "metadata": metadata_info, "year": args.year, "endpoint_base": client.base_url, "parameters": {"metrics": metrics, "sexes": sexes, "cancers": requested_cancers, "ages": ages, "format": args.format, "rps": args.rps}})
+    if args.preset == "full":
+        print(f"Full plan: {len(tasks)} requests ({len(metrics)} metrics × {len(sexes)} sexes × {len(requested_cancers)} cancer/site entries × {len(ages)} age ranges).")
+    dictionary = output / "DATA_DICTIONARY.md"
+    if not dictionary.exists():
+        dictionary.parent.mkdir(parents=True, exist_ok=True)
+        dictionary.write_text(data_dictionary_markdown(), encoding="utf-8")
     completed, empty = set(manifest["completed"]), set(manifest["empty"])
     for index, (metric, sex, code, age) in enumerate(tasks, 1):
         key = f"{metric}/{sex}/{code}/{age['start']}_{age['end']}"
@@ -132,6 +186,15 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--year", type=int, default=2024)
         p.add_argument("--rps", type=float, default=1.0)
         p.set_defaults(func=func)
+    populations = sub.add_parser("populations")
+    populations.add_argument("--year", type=int, default=2024)
+    populations.add_argument("--rps", type=float, default=1.0)
+    populations.add_argument("--level", default="")
+    populations.add_argument("--refresh-meta", action="store_true")
+    populations.set_defaults(func=cmd_populations)
+    inspect = sub.add_parser("inspect")
+    inspect.add_argument("output_directory")
+    inspect.set_defaults(func=cmd_inspect)
     download = sub.add_parser("download")
     download.add_argument("--year", type=int, default=2024)
     download.add_argument("--metric", default="incidence")

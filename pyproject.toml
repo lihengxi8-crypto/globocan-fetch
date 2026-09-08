@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "globocan-fetch"
-version = "0.1.0"
+version = "0.2.0"
 description = "A reproducible, rate-limited client for GLOBOCAN Cancer Today tabular estimates."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,4 +31,3 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
