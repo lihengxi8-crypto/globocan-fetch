@@ -36,11 +36,12 @@ FIELDS = (
     _f("age_start_idx", "query", False, "0–17", "Start five-year age-band index (0 is 0–4; 17 is 85+).", "起始五岁年龄组索引（0 为 0–4；17 为 85+）。"),
     _f("age_end_idx", "query", False, "0–17", "End five-year age-band index.", "结束五岁年龄组索引。"),
     _f("age_label", "derived", False, "text", "Human-readable queried age range.", "人类可读的查询年龄范围。"),
-    _f("total", "gco_response", True, "count", "Estimated new cases for incidence or estimated deaths for mortality.", "发病时为估计新发病例数；死亡时为估计死亡数。"),
-    _f("total_pop", "gco_response", True, "persons", "Population denominator for the queried sex and age range.", "对应查询性别和年龄范围的人口分母。"),
-    _f("asr", "gco_response", True, "per 100,000", "Age-standardized rate (World); do not sum across age ranges.", "世界标准人口年龄标化率；不可跨年龄范围相加。"),
-    _f("crude_rate", "gco_response", True, "per 100,000", "Crude rate; approximately total / total_pop × 100,000, subject to source rounding.", "粗率；约为 total / total_pop × 100,000，可能受源端取整影响。"),
-    _f("cum_risk_74", "gco_response", True, "percent", "Cumulative risk before age 75 (0–74), as returned by GCO; it is not the queried age interval risk.", "GCO 返回的 75 岁前（0–74）累计风险；并非当前查询年龄范围的风险。"),
+    _f("total", "gco_response_or_derived", True, "count", "Estimated new cases or deaths; reconstructed 2024 high-age rows use adjacent cumulative count differences.", "估计新发病例数或死亡数；重建的 2024 年高龄行使用相邻累计计数之差。"),
+    _f("total_pop", "gco_response_or_derived", True, "persons", "Population denominator; reconstructed 2024 high-age rows use adjacent cumulative population differences.", "人口分母；重建的 2024 年高龄行使用相邻累计人口数之差。"),
+    _f("asr", "gco_response_or_derived", True, "per 100,000", "Age-standardized rate (World); reconstructed single-stratum rows use their derived crude rate. Do not sum across ages.", "世界标准人口年龄标化率；重建的单年龄层行使用派生粗率。不可跨年龄范围相加。"),
+    _f("crude_rate", "gco_response_or_derived", True, "per 100,000", "Crude rate; reconstructed high-age rows use total / total_pop × 100,000.", "粗率；重建的高龄行按 total / total_pop × 100,000 计算。"),
+    _f("cum_risk", "gco_response_or_derived", True, "percent", "Cumulative risk (%) for the queried age interval when provided by GCO; reconstructed closed five-year bands use the standard cumulative-rate conversion.", "GCO 提供的当前查询年龄区间累计风险（%）；重建的封闭五岁年龄组按标准累计率公式换算。"),
+    _f("cum_risk_74", "gco_response", True, "percent", "GCO cumulative-risk field truncated at age 74 while retaining the queried starting age, based on observed API behavior; not necessarily birth through age 74.", "根据观测到的 API 行为，该字段在 74 岁截断但保留查询起始年龄；不一定表示从出生至 74 岁。"),
     _f("rank", "gco_response", True, "integer", "Context-dependent API ranking; interpret only with the original metric, sex, cancer and age query.", "依赖查询上下文的 API 排名；只能结合原始指标、性别、癌种和年龄查询解读。"),
 )
 FIELD_NAMES = [field.name for field in FIELDS]

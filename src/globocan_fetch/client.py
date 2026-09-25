@@ -42,7 +42,7 @@ class GCOClient:
         self.limiter = RateLimiter(requests_per_second)
         self.session = session or requests.Session()
         self.session.headers.update({
-            "User-Agent": "globocan-fetch/0.1 (research client; contact: repository issues)",
+            "User-Agent": "globocan-fetch/1.0.0 (research client; contact: repository issues)",
             "Accept": "application/json",
             "Referer": "https://gco.iarc.who.int/today/en/dataviz/tables",
         })
@@ -86,6 +86,6 @@ class GCOClient:
             f"data/rate/{metric}/{sex}/all/{cancer}/",
             {"ages_group": f"{age_start}_{age_end}"},
         )
-        if not isinstance(data, dict) or not isinstance(data.get("dataset", []), list):
+        if not isinstance(data, dict) or not isinstance(data.get("dataset"), list):
             raise GCOError("Rate response has no list-valued 'dataset'")
         return data

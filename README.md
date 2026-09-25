@@ -1,12 +1,12 @@
-# globocan-fetch
+# globocan-fetch v1.0.0
 
-A reproducible downloader and data guide for [GLOBOCAN Cancer Today](https://gco.iarc.who.int/today/) tabular estimates.
+Reproducible downloader and data guide for [GLOBOCAN Cancer Today](https://gco.iarc.who.int/today/) estimates.
 
 `globocan-fetch` helps researchers retrieve, document, understand, and analyze selected GLOBOCAN **incidence and mortality estimates** in CSV or Parquet format.
 
 [中文说明](README.zh-CN.md)
 
-> **Project status: v0.2, research-oriented software.**  
+> **Project status: v1.0.0.**
 > `globocan-fetch` is not an official IARC, WHO, or GCO tool. It uses request paths observed from the public Cancer Today web application; these endpoints should not be assumed to be a stable public API. The repository contains code only and does not distribute downloaded GLOBOCAN data.
 
 ---
@@ -279,6 +279,7 @@ It records information including:
 - query parameters;
 - completed query tasks;
 - empty query tasks;
+- failed query tasks and their error messages;
 - output file row counts;
 - output SHA-256 hashes;
 - population metadata SHA-256;
@@ -337,7 +338,7 @@ Always use the cancer metadata when interpreting `cancer_code`.
 
 Each output row represents one population for one requested metric, sex, cancer/site, and age range.
 
-The public schema contains 23 fields.
+The public schema contains 24 fields.
 
 | Field | Source | Meaning | Unit / Values | Notes |
 |---|---|---|---|---|
@@ -358,16 +359,17 @@ The public schema contains 23 fields.
 | `age_start_idx` | Query / derived | Starting five-year age-group index | `0`–`17` | Zero-based. |
 | `age_end_idx` | Query / derived | Ending five-year age-group index | `0`–`17` | Inclusive. |
 | `age_label` | Derived by globocan-fetch | Human-readable queried age range | e.g. `0-85+`, `65-69` | Describes the age range requested for the table. |
-| `total` | GCO response | Estimated number of incident cases or deaths | Count | Incidence tables contain estimated new cases; mortality tables contain estimated deaths. This is not a rate. |
-| `total_pop` | GCO response | Population denominator corresponding to the queried sex and age range | Persons | Used when interpreting or deriving crude rates. |
-| `asr` | GCO response | Age-Standardized Rate (World) | Usually per 100,000 | Do not add ASRs across age bands. |
-| `crude_rate` | GCO response | Crude rate | Usually per 100,000 | Conceptually related to `total / total_pop × 100,000`; API rounding may produce small differences. |
-| `cum_risk_74` | GCO response | Estimated cumulative risk from birth through age 74, i.e. before age 75 | Percent (%) | May be missing for some responses. **It does not represent risk over the table's `age_label` interval.** |
+| `total` | GCO response or derived | Estimated number of incident cases or deaths | Count | Reconstructed 2024 high-age rows use differences of adjacent cumulative counts. |
+| `total_pop` | GCO response or derived | Population denominator corresponding to the queried sex and age range | Persons | Reconstructed 2024 high-age rows use differences of adjacent cumulative populations. |
+| `asr` | GCO response or derived | Age-Standardized Rate (World) | Usually per 100,000 | Reconstructed single-stratum rows use the derived crude rate; do not add ASRs across ages. |
+| `crude_rate` | GCO response or derived | Crude rate | Usually per 100,000 | Reconstructed high-age rows use `total / total_pop × 100,000`; direct API values retain upstream rounding. |
+| `cum_risk` | GCO response or derived | Cumulative risk for the queried age interval when returned by GCO; reconstructed closed five-year groups use the standard cumulative-rate conversion | Percent (%) | Missing upstream keys remain null. Missing for queries ending in the open-ended 85+ group. |
+| `cum_risk_74` | GCO response | GCO's cumulative-risk field truncated at age 74 while retaining the queried starting age, based on observed API behavior | Percent (%) | Not always risk from birth: for a query starting at 70, it describes 70–74. |
 | `rank` | GCO response | Ranking value returned by the current API context | Integer / nullable | Context-dependent; do not interpret it as a universal fixed global rank outside the original query. |
 
-<!-- concept: cum-risk-0-74 -->
+<!-- concept: cum-risk-fields-differ -->
 
-`cum_risk_74` is specifically an estimate for **ages 0–74 / before age 75**. It must not be reinterpreted as the cumulative risk for whatever range appears in `age_label`.
+`cum_risk` and `cum_risk_74` are distinct upstream fields and are never used as fallbacks for each other. IARC describes cumulative risk as a probability over a specified age span in the absence of other causes of death, calculated from cumulative rate. Observed GCO API responses show that `cum_risk` follows the full queried interval and is absent when the interval ends in 85+. The `cum_risk_74` field is invariant as the query's end age increases beyond 74, while retaining the query start: for example, 14_14 through 14_17 all return the same value. This observed behavior supports interpreting it as risk from the selected start through age 74, rather than universally from birth through age 74.
 
 ---
 
@@ -416,11 +418,13 @@ If you combine five-year age groups, you may sum counts and population denominat
 
 `globocan-fetch` does not currently provide an automatic arbitrary-age-range ASR recalculation workflow.
 
-### Cumulative risk 0–74: `cum_risk_74`
+### Cumulative risk: `cum_risk` and `cum_risk_74`
 
-This value represents the estimated cumulative risk from birth through age 74, expressed as a percentage.
+IARC defines cumulative risk over a specified age span as the probability of developing or dying from the disease in the absence of other causes of death. The cumulative rate is the sum of age-specific rates over each year in that span; for five-year groups, the method assumes the rate is constant within each group. The conversion is `risk (%) = 100 × (1 − exp(−cumulative_rate / 100))` when cumulative rate is expressed as a percent (equivalently, `100 × (1 − exp(−cumulative_rate_per_100000 / 100000))`).
 
-It is **not** determined by the table's `age_label`.
+`cum_risk` is the API value for the selected query interval. `cum_risk_74` is separately preserved from the API; raw responses indicate it ends at age 74 but retains the selected query's starting age. This interpretation is based on observed API behavior, not a located GLOBOCAN 2024 field-level definition. Direct rows preserve both upstream fields independently. For reconstructed 75–79 and 80–84 rows, the downloader derives `cum_risk` from the reconstructed five-year crude rate using the standard formula; 85+ has no finite age-band width and receives null. Reconstructed `cum_risk_74` is null because its query context is not equivalent to the high-age interval.
+
+The Cancer Today table displays “Cum. risk” for closed intervals, matching `cum_risk`; when a query ends in 85+, that field is missing and the page displays “Cum. risk 74” from `cum_risk_74` (observed World values: 70–79, 1.8 vs API 1.84; 70–85+, 0.90 vs API `cum_risk_74=0.90`).
 
 ---
 
@@ -538,6 +542,10 @@ does **not** return 18 age rows.
 It requests one aggregate result for the entire age range from 0 through 85+, with separate rows for populations.
 
 If you need separate five-year age groups, request the individual five-year ranges.
+
+The `five_year` preset generates all 18 indices, but the rate endpoint returned `dataset=[]` for direct `15_15`, `16_16`, and `17_17` queries for both female breast-cancer incidence and male lung-cancer mortality in a live check on 24 September 2026. When an individual 75+ band is empty, the downloader reconstructs it from adjacent cumulative queries (`0_n` minus `0_(n-1)`). It records the file provenance in `manifest.json`. Counts and population are differenced; crude rate is recomputed; ASR equals the rate for a single age stratum; cumulative risk is computed for closed five-year groups using IARC's standard formula. The open-ended 85+ group has null cumulative risk, and all reconstructed groups have null `cum_risk_74` and `rank`. See `docs/api-observations.md` for the evidentiary limits and formula check. Check the manifest's `empty` and `failed` entries before treating a download as complete age coverage.
+
+The fallback applies only to 2024 after an empty direct response. It fails the task instead of silently dropping populations when cumulative population keys disagree, required counts are invalid, or differences are negative. When all three 75+ bands need reconstruction in one request, their counts and populations must add up to the available cumulative 75+ difference before any derived file is written. This is an internal arithmetic check, not an independent GCO estimate. The manifest records `direct_query`, its empty result, source cumulative queries, derived fields, and unavailable fields. Known 2024 high-age entries previously marked empty are retried; other empty entries remain skipped.
 
 The CLI also supports predefined categories such as:
 
@@ -659,7 +667,7 @@ Recalculating an ASR requires the appropriate standard-population weights.
    Sex-specific cancers can produce empty datasets for incompatible queries.
 
 9. **Interpreting `cum_risk_74` as the current age-range risk.**  
-   It refers to cumulative risk through age 74.
+   It is truncated at age 74 while retaining the query's starting age, based on observed API behavior.
 
 10. **Confusing data year with access date.**  
     A 2024 estimate may be downloaded or updated later.

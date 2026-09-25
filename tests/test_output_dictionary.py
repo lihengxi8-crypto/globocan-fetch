@@ -6,4 +6,5 @@ def test_generated_dictionary_is_complete_and_bilingual(tmp_path):
     path.write_text(data_dictionary_markdown(), encoding="utf-8")
     text = path.read_text(encoding="utf-8")
     assert [text.index(f"`{name}`") for name in FIELD_NAMES] == sorted(text.index(f"`{name}`") for name in FIELD_NAMES)
-    assert "before age 75" in text and "75 岁前" in text
+    assert "queried starting age" in text and "保留查询起始年龄" in text
+    assert "`cum_risk`" in text and "`cum_risk_74`" in text

@@ -23,4 +23,4 @@ def test_readme_section_markers_are_bilingual_and_ordered():
 
 def test_readme_concept_markers_match():
     concepts = [re.findall(r"<!-- concept: ([a-z0-9-]+) -->", (ROOT / name).read_text(encoding="utf-8")) for name in ("README.md", "README.zh-CN.md")]
-    assert concepts[0] == concepts[1] == ["cum-risk-0-74", "asr-not-additive", "country-filter", "cancer-code-not-icd"]
+    assert concepts[0] == concepts[1] == ["cum-risk-fields-differ", "asr-not-additive", "country-filter", "cancer-code-not-icd"]
