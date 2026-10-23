@@ -11,7 +11,7 @@ from . import __version__
 from .client import GCOClient, GCOError
 from .constants import SEX_CODES, TYPE_CODES, age_combinations
 from .metadata import load_or_fetch
-from .schema import data_dictionary_markdown
+from .schema import SCHEMA_VERSION, UI_METADATA, data_dictionary_markdown
 from .writers import sha256, write_rows
 
 
@@ -44,7 +44,7 @@ def _load_manifest(output: Path) -> dict:
         manifest = json.loads(path.read_text(encoding="utf-8"))
         manifest.setdefault("failed", {})
         return manifest
-    return {"schema_version": 2, "software_version": __version__, "created_at": datetime.now(timezone.utc).isoformat(), "completed": [], "empty": [], "failed": {}, "files": {}}
+    return {"schema_version": SCHEMA_VERSION, "software_version": __version__, "created_at": datetime.now(timezone.utc).isoformat(), "completed": [], "empty": [], "failed": {}, "files": {}}
 
 
 def _save_manifest(output: Path, manifest: dict) -> None:
@@ -56,15 +56,37 @@ def _save_manifest(output: Path, manifest: dict) -> None:
 
 
 def _identity(year: int, endpoint_base: str, output_format: str) -> dict:
-    return {"year": year, "endpoint_base": endpoint_base, "output_format": output_format, "schema_version": 2}
+    return {"year": year, "endpoint_base": endpoint_base, "output_format": output_format, "schema_version": SCHEMA_VERSION}
 
 
 def _ensure_identity(manifest: dict, identity: dict) -> None:
+    if manifest.get("schema_version", SCHEMA_VERSION) != SCHEMA_VERSION:
+        raise SystemExit("Existing output uses a different schema version. Use a new output directory.")
     existing = manifest.get("dataset_identity")
     if existing and existing != identity:
         raise SystemExit("Existing output belongs to a different dataset configuration. Use a new output directory.")
     if not existing and (manifest.get("completed") or manifest.get("empty") or manifest.get("files")):
         raise SystemExit("Existing output has a legacy manifest without dataset identity. Use a new output directory.")
+
+
+def _finite_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _parse_ui(source: dict) -> dict:
+    """Preserve available count UI bounds and flag quality without inferring values."""
+    ui = source.get("ui")
+    bounds = ui if isinstance(ui, dict) else {}
+    low = bounds.get("low")
+    high = bounds.get("high")
+    low = low if _finite_number(low) else None
+    high = high if _finite_number(high) else None
+    within = None
+    status = "not_provided" if "ui" not in source else "incomplete"
+    if low is not None and high is not None and _finite_number(source.get("total")):
+        within = low <= source["total"] <= high
+        status = "complete" if within else "point_outside_interval"
+    return {"ui_lower": low, "ui_upper": high, "ui_status": status, "point_within_ui": within}
 
 
 def _rows(dataset: list[dict], pop_map: dict, cancer: dict, metric: str, sex: str, age: dict) -> list[dict]:
@@ -78,6 +100,7 @@ def _rows(dataset: list[dict], pop_map: dict, cancer: dict, metric: str, sex: st
             "total": source.get("total"), "total_pop": source.get("total_pop"), "asr": source.get("asr"),
             "crude_rate": source.get("crude_rate"), "cum_risk": source.get("cum_risk"),
             "cum_risk_74": source.get("cum_risk_74"), "rank": source.get("rank"),
+            **_parse_ui(source),
         })
     return out
 
@@ -162,21 +185,21 @@ def _check_high_age_aggregate(bands: dict[int, list[dict]], lower: list[dict], u
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    client = GCOClient(args.year, requests_per_second=args.rps)
+    client = GCOClient(args.year, requests_per_second=args.rps, api_base=args.api_base)
     populations, cancers = client.populations(), client.cancers()
     print(json.dumps({"year": args.year, "population_count": len(populations), "cancer_count": len(cancers), "endpoint_base": client.base_url}, indent=2))
     return 0
 
 
 def cmd_cancers(args: argparse.Namespace) -> int:
-    client = GCOClient(args.year, requests_per_second=args.rps)
+    client = GCOClient(args.year, requests_per_second=args.rps, api_base=args.api_base)
     for cancer in client.cancers():
         print(f"{cancer.get('cancer')}\t{cancer.get('label')}\t{cancer.get('ICD', '')}")
     return 0
 
 
 def cmd_populations(args: argparse.Namespace) -> int:
-    client = GCOClient(args.year, requests_per_second=args.rps)
+    client = GCOClient(args.year, requests_per_second=args.rps, api_base=args.api_base)
     pop_map, _, _ = load_or_fetch(client, Path(".globocan-fetch") / str(args.year), refresh=args.refresh_meta)
     levels = sorted({row["pop_level"] for row in pop_map.values()})
     if args.level and args.level not in levels:
@@ -213,7 +236,10 @@ def cmd_download(args: argparse.Namespace) -> int:
     else:
         metrics, sexes, ages = _split(args.metric, TYPE_CODES, "--metric"), _split(args.sex, SEX_CODES, "--sex"), _ages(args.age)
     output = Path(args.output)
-    client = GCOClient(args.year, requests_per_second=args.rps, timeout=args.timeout, retries=args.retries)
+    client = GCOClient(args.year, requests_per_second=args.rps, timeout=args.timeout, retries=args.retries, api_base=args.api_base)
+    manifest = _load_manifest(output)
+    identity = _identity(args.year, client.base_url, args.format)
+    _ensure_identity(manifest, identity)
     cache_dir = output / ".globocan-fetch" / "meta"
     pop_map, cancer_map, metadata_info = load_or_fetch(client, cache_dir, refresh=args.refresh_meta)
     requested_cancers = [int(v) for v in args.cancer.split(",")] if args.preset != "full" else sorted(cancer_map)
@@ -221,13 +247,10 @@ def cmd_download(args: argparse.Namespace) -> int:
     if unknown:
         raise SystemExit(f"Unknown cancer codes: {unknown}. Run `globocan-fetch cancers --year {args.year}`.")
     tasks = [(metric, sex, code, age) for metric in metrics for sex in sexes for code in requested_cancers for age in ages]
-    manifest = _load_manifest(output)
-    identity = _identity(args.year, client.base_url, args.format)
-    _ensure_identity(manifest, identity)
     old_metadata = manifest.get("metadata")
     if old_metadata and (old_metadata["populations_sha256"] != metadata_info["populations_sha256"] or old_metadata["cancers_sha256"] != metadata_info["cancers_sha256"]) and (manifest.get("completed") or manifest.get("empty")):
         raise SystemExit("Metadata changed for an existing output. Use a new output directory.")
-    manifest.update({"schema_version": 2, "dataset_identity": identity, "metadata": metadata_info, "year": args.year, "endpoint_base": client.base_url, "parameters": {"metrics": metrics, "sexes": sexes, "cancers": requested_cancers, "ages": ages, "format": args.format, "rps": args.rps}})
+    manifest.update({"schema_version": SCHEMA_VERSION, "dataset_identity": identity, "uncertainty_intervals": dict(UI_METADATA), "metadata": metadata_info, "year": args.year, "endpoint_base": client.base_url, "parameters": {"metrics": metrics, "sexes": sexes, "cancers": requested_cancers, "ages": ages, "format": args.format, "rps": args.rps}})
     if args.preset == "full":
         print(f"Full plan: {len(tasks)} requests ({len(metrics)} metrics × {len(sexes)} sexes × {len(requested_cancers)} cancer/site entries × {len(ages)} age ranges).")
     dictionary = output / "DATA_DICTIONARY.md"
@@ -285,7 +308,7 @@ def cmd_download(args: argparse.Namespace) -> int:
                 "source": "derived_cumulative_difference", "direct_query": f"{band}_{band}",
                 "direct_query_result": "empty", "derived_from": [f"0_{band - 1}", f"0_{band}"],
                 "derived_fields": ["total", "total_pop", "crude_rate", "asr"] + (["cum_risk"] if band < 17 else []),
-                "unavailable_fields": ["cum_risk_74", "rank"] + (["cum_risk"] if band == 17 else []),
+                "unavailable_fields": ["cum_risk_74", "rank", "ui_lower", "ui_upper", "point_within_ui"] + (["cum_risk"] if band == 17 else []),
             }
             plan[band] = (derived, provenance)
         if all_empty:
@@ -328,7 +351,7 @@ def cmd_download(args: argparse.Namespace) -> int:
                     "direct_query": f"{band}_{band}", "direct_query_result": "empty",
                     "derived_from": [f"0_{band - 1}", f"0_{band}"],
                     "derived_fields": ["total", "total_pop", "crude_rate", "asr"] + (["cum_risk"] if band < 17 else []),
-                    "unavailable_fields": ["cum_risk_74", "rank"] + (["cum_risk"] if band == 17 else []),
+                    "unavailable_fields": ["cum_risk_74", "rank", "ui_lower", "ui_upper", "point_within_ui"] + (["cum_risk"] if band == 17 else []),
                 }
             if not dataset:
                 manifest["empty"].append(key)
@@ -337,6 +360,8 @@ def cmd_download(args: argparse.Namespace) -> int:
                 cancer = {"code": code, **cancer_map[code]}
                 suffix = "parquet" if args.format == "parquet" else "csv"
                 name = f"{metric}_{sex}_can{code}_a{age['start']}-{age['end']}.{suffix}"
+                if provenance["source"] == "derived_cumulative_difference":
+                    dataset = [{key: value for key, value in row.items() if key != "ui"} for row in dataset]
                 path = write_rows(_rows(dataset, pop_map, cancer, metric, sex, age), output / "tables" / name, args.format)
                 manifest["completed"].append(key)
                 completed.add(key)
@@ -363,10 +388,12 @@ def main(argv: list[str] | None = None) -> int:
         p = sub.add_parser(name)
         p.add_argument("--year", type=int, default=2024)
         p.add_argument("--rps", type=float, default=1.0)
+        p.add_argument("--api-base", help="Override the API base URL including the year; no endpoint fallback")
         p.set_defaults(func=func)
     populations = sub.add_parser("populations")
     populations.add_argument("--year", type=int, default=2024)
     populations.add_argument("--rps", type=float, default=1.0)
+    populations.add_argument("--api-base", help="Override the API base URL including the year; no endpoint fallback")
     populations.add_argument("--level", default="")
     populations.add_argument("--refresh-meta", action="store_true")
     populations.set_defaults(func=cmd_populations)
@@ -374,6 +401,7 @@ def main(argv: list[str] | None = None) -> int:
     inspect.add_argument("output_directory")
     inspect.set_defaults(func=cmd_inspect)
     download = sub.add_parser("download")
+    download.add_argument("--api-base", help="Override the API base URL including the year; no endpoint fallback")
     download.add_argument("--year", type=int, default=2024)
     download.add_argument("--metric", default="incidence")
     download.add_argument("--sex", default="both")

@@ -4,6 +4,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+SCHEMA_VERSION = 3
+UI_METADATA = {
+    "source": "gco_response.ui",
+    "label": "95% uncertainty interval",
+    "inferred_when_missing": False,
+}
+
+
 @dataclass(frozen=True)
 class FieldDefinition:
     name: str
@@ -43,11 +51,17 @@ FIELDS = (
     _f("cum_risk", "gco_response_or_derived", True, "percent", "Cumulative risk (%) for the queried age interval when provided by GCO; reconstructed closed five-year bands use the standard cumulative-rate conversion.", "GCO 提供的当前查询年龄区间累计风险（%）；重建的封闭五岁年龄组按标准累计率公式换算。"),
     _f("cum_risk_74", "gco_response", True, "percent", "GCO cumulative-risk field truncated at age 74 while retaining the queried starting age, based on observed API behavior; not necessarily birth through age 74.", "根据观测到的 API 行为，该字段在 74 岁截断但保留查询起始年龄；不一定表示从出生至 74 岁。"),
     _f("rank", "gco_response", True, "integer", "Context-dependent API ranking; interpret only with the original metric, sex, cancer and age query.", "依赖查询上下文的 API 排名；只能结合原始指标、性别、癌种和年龄查询解读。"),
+    _f("ui_lower", "gco_response.ui.low", True, "count", "Lower bound of the 95% uncertainty interval for the estimated count (total), when returned by Cancer Today; not an ASR, crude-rate or cumulative-risk interval.", "Cancer Today 返回的估计病例数或死亡数（total）95%不确定性区间下限；若上游未提供则为空，不是标化率、粗率或累计风险的区间。"),
+    _f("ui_upper", "gco_response.ui.high", True, "count", "Upper bound of the 95% uncertainty interval for the estimated count (total), when returned by Cancer Today; not an ASR, crude-rate or cumulative-risk interval.", "Cancer Today 返回的估计病例数或死亡数（total）95%不确定性区间上限；若上游未提供则为空，不是标化率、粗率或累计风险的区间。"),
+    _f("ui_status", "derived_qc", False, "complete/incomplete/not_provided/point_outside_interval", "QC status: complete when finite bounds contain total; incomplete when UI is present but a bound or total is unusable; not_provided when ui is absent; point_outside_interval when total is outside the finite bounds. Upstream numeric bounds are preserved.", "质控状态：有限上下界包含 total 为 complete；存在 UI 但上下界或 total 不可用为 incomplete；无 ui 字段为 not_provided；total 超出有限上下界为 point_outside_interval。保留上游数值边界。"),
+    _f("point_within_ui", "derived_qc", True, "boolean or null", "Whether total lies within the returned uncertainty interval; null when a complete numeric interval or usable total is unavailable.", "total 是否位于返回的不确定性区间内；无法取得完整数值区间或有效 total 时为空，不将缺失视为 false。"),
+
 )
 FIELD_NAMES = [field.name for field in FIELDS]
 
 
 def data_dictionary_markdown() -> str:
-    lines = ["# Data dictionary", "", "One table fixes metric × sex × cancer × age range; each row represents one population, not one case.", "", "| Field | Source | Nullable | Unit / values | English description | 中文解释 |", "| --- | --- | --- | --- | --- | --- |"]
+    lines = ["# Data dictionary", "", f"Schema version: {SCHEMA_VERSION}", "", "One table fixes metric × sex × cancer × age range; each row represents one population, not one case.", "", "| Field | Source | Nullable | Unit / values | English description | 中文解释 |", "| --- | --- | --- | --- | --- | --- |"]
     lines += [f"| `{f.name}` | `{f.source}` | {'yes' if f.nullable else 'no'} | {f.unit_or_values} | {f.description_en} | {f.description_zh} |" for f in FIELDS]
+    lines += ["", "`ui_lower` and `ui_upper` are 95% uncertainty intervals for the estimated count (`total`) as returned by Cancer Today. Missing intervals are not zero uncertainty. No age-specific or reconstructed intervals are inferred.", "", "ui_lower 和 ui_upper 仅对应估计人数；空值不表示不确定性为零。年龄限制请求、结直肠汇总或重建年龄组未返回的 UI 不会被复制、相加、相减、按比例分配或推算。"]
     return "\n".join(lines) + "\n"

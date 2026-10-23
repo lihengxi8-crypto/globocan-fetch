@@ -1,4 +1,4 @@
-# globocan-fetch v1.0.0
+# globocan-fetch v1.1.0
 
 一个面向研究者的 [GLOBOCAN Cancer Today](https://gco.iarc.who.int/today/) 数据下载与学习工具。
 
@@ -6,7 +6,7 @@
 
 [English](README.md)
 
-> **项目状态：v1.0.0。**
+> **项目状态：v1.1.0。**
 > `globocan-fetch` 不是 IARC、WHO 或 GCO 官方工具。本项目使用的是从公开 Cancer Today 网页应用中观察到的请求路径，不应将其视为由官方承诺长期稳定的公共 API。本仓库仅包含代码，不分发下载得到的 GLOBOCAN 数据。
 
 ---
@@ -360,7 +360,7 @@ GCO cancer/site code 20 -> Breast -> ICD C50
 
 每一行对应一个 population 在指定指标、性别、癌种/site 和年龄范围下的数据。
 
-当前公共 schema 共包含 24 个字段。
+当前公共 schema 共包含 28 个字段。
 
 | 字段 | 来源 | 含义 | 单位/取值 | 注意事项 |
 |---|---|---|---|---|
@@ -388,6 +388,31 @@ GCO cancer/site code 20 -> Breast -> ICD C50
 | `cum_risk` | GCO response 或派生 | API 返回的当前查询年龄区间累计风险；重建的封闭五岁组使用标准累计率公式换算 | 百分比（%） | upstream key 缺失时保持 null；查询终点包含开放式 85+ 时 API 不返回该字段。 |
 | `cum_risk_74` | GCO response | 根据观测 API 行为，该累计风险字段在 74 岁截断，同时保留查询起始年龄 | 百分比（%） | 不一定从出生开始：查询从 70 岁起时表示 70–74 岁。 |
 | `rank` | GCO response | 当前 API 查询上下文返回的排序值 | 整数/可为空 | 依赖具体查询上下文，不应脱离原始 metric / sex / age / cancer 条件解释为固定“全球排名”。 |
+| `ui_lower` | GCO response `ui.low` | Cancer Today 返回的估计病例数或死亡数（`total`）95%不确定性区间下限 | count；可为空 | 不是 ASR、粗率或累计风险的区间。 |
+| `ui_upper` | GCO response `ui.high` | Cancer Today 返回的估计病例数或死亡数（`total`）95%不确定性区间上限 | count；可为空 | 缺失或不可用的边界保持 null。 |
+| `ui_status` | 派生 QC | 上游人数 UI 的可用性与一致性状态 | `complete`、`incomplete`、`not_provided`、`point_outside_interval` | 即使点估计超出区间也保留原始数值边界。 |
+| `point_within_ui` | 派生 QC | `total` 是否位于有限数值 UI 边界之内 | boolean；可为空 | 边界或点估计不可用时为 null；缺失不等于 false。 |
+
+### 95%不确定性区间（95% uncertainty interval，schema v3）
+
+`ui_lower` 和 `ui_upper` 是 Cancer Today 返回的估计人数（`total`）95%不确定性区间。默认从同一次 rate response 保存，不增加 HTTP 请求，也不需要 `--include-ui` 开关。
+
+当前公开 API 的许多全年龄估计带有 UI；年龄限制请求可能不提供 UI。工具原样保留这种可用性，不推算年龄别区间。已观察的全年龄结直肠汇总癌种 41（Colorectum）同样不返回 UI。重建的 75–79、80–84 和 85+ 行上下界为空、`ui_status=not_provided`、`point_within_ui=null`，manifest provenance 中列出不可用的 UI 字段。工具不会复制全年龄区间、按比例分配、插值、跨癌种相加或跨累计年龄查询相减。
+
+- `complete`：有限数值上下界和有效 `total`，满足 `low <= total <= high`。
+- `point_outside_interval`：上下界和 `total` 有效，但点估计超出区间。正人数搭配 `0–0` UI 的异常原样保存并标记。
+- `incomplete`：存在 `ui`，但边界缺失、null、非数值或非有限；`total` 不可用也无法执行区间内外检查。有效边界仍保留。
+- `not_provided`：response 中完全没有 `ui` 字段。
+
+真实响应示例（中国女性乳腺癌发病，2026-10-23 核查；省略其他列）：
+
+```csv
+country_code,sex,metric,cancer_code,age_label,total,ui_lower,ui_upper,ui_status,point_within_ui
+156,female,incidence,20,0-85+,375808,373555,378075,complete,True
+156,female,incidence,20,50-54,59957,,,not_provided,
+```
+
+上下界为空表示该查询的公开 API **没有提供不确定性区间**，不表示不确定性为零。上游提供但不可用的边界也输出 null，以 `incomplete` 区分。四个新字段追加在现有列之后。schema v3 拒绝续写 schema v2 输出目录；请使用新目录重新下载，工具不会迁移或覆盖旧 v2 文件。
 
 <!-- concept: cum-risk-fields-differ -->
 
@@ -711,7 +736,7 @@ agg["crude_rate"] = agg["total"] / agg["total_pop"] * 100_000
 
 每一个下载目录都会维护 `manifest.json`。
 
-Manifest schema v2 用于记录本地数据快照的身份与状态，包括：
+Manifest schema v3 用于记录本地数据快照的身份与状态，包括：
 
 - 软件版本；
 - schema version；
@@ -760,8 +785,17 @@ Manifest 记录的是本地数据获取上下文，但不能代替正式论文�
 概念上，相关资源位于：
 
 ```text
-https://gco.iarc.fr/gateway_prod/api/globocan/v3/{year}/
+https://gco-api.iarc.fr/api/globocan/v3/{year}/
 ```
+
+默认 endpoint 跟随当前 Cancer Today 前端（2026-10-23 核查）。可在 `download`、`verify`、`cancers` 或 `populations` 使用 `--api-base`，完整 URL 需包含年份：
+
+```bash
+globocan-fetch verify --year 2024 --api-base https://gco-api.iarc.fr/api/globocan/v3/2024
+```
+
+实际使用的 base URL 写入 manifest 和 dataset identity；不会静默 fallback 到旧 `gateway_prod` endpoint。修改 endpoint 必须使用新输出目录。UI provenance 记录 `uncertainty_intervals.source = gco_response.ui` 和 `inferred_when_missing = false`。
+
 
 目前观察到的 metadata 资源包括：
 

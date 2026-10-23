@@ -1,4 +1,4 @@
-# globocan-fetch v1.0.0
+# globocan-fetch v1.1.0
 
 Reproducible downloader and data guide for [GLOBOCAN Cancer Today](https://gco.iarc.who.int/today/) estimates.
 
@@ -6,7 +6,7 @@ Reproducible downloader and data guide for [GLOBOCAN Cancer Today](https://gco.i
 
 [中文说明](README.zh-CN.md)
 
-> **Project status: v1.0.0.**
+> **Project status: v1.1.0.**
 > `globocan-fetch` is not an official IARC, WHO, or GCO tool. It uses request paths observed from the public Cancer Today web application; these endpoints should not be assumed to be a stable public API. The repository contains code only and does not distribute downloaded GLOBOCAN data.
 
 ---
@@ -338,7 +338,7 @@ Always use the cancer metadata when interpreting `cancer_code`.
 
 Each output row represents one population for one requested metric, sex, cancer/site, and age range.
 
-The public schema contains 24 fields.
+The public schema contains 28 fields.
 
 | Field | Source | Meaning | Unit / Values | Notes |
 |---|---|---|---|---|
@@ -366,6 +366,31 @@ The public schema contains 24 fields.
 | `cum_risk` | GCO response or derived | Cumulative risk for the queried age interval when returned by GCO; reconstructed closed five-year groups use the standard cumulative-rate conversion | Percent (%) | Missing upstream keys remain null. Missing for queries ending in the open-ended 85+ group. |
 | `cum_risk_74` | GCO response | GCO's cumulative-risk field truncated at age 74 while retaining the queried starting age, based on observed API behavior | Percent (%) | Not always risk from birth: for a query starting at 70, it describes 70–74. |
 | `rank` | GCO response | Ranking value returned by the current API context | Integer / nullable | Context-dependent; do not interpret it as a universal fixed global rank outside the original query. |
+| `ui_lower` | GCO response `ui.low` | Lower bound of the 95% uncertainty interval for the estimated count (`total`) | Count; nullable | Not an interval for ASR, crude rate or cumulative risk. |
+| `ui_upper` | GCO response `ui.high` | Upper bound of the 95% uncertainty interval for the estimated count (`total`) | Count; nullable | Missing or unusable bounds remain null. |
+| `ui_status` | Derived QC | Upstream count UI availability and consistency | `complete`, `incomplete`, `not_provided`, `point_outside_interval` | Numeric bounds are preserved even when the point estimate lies outside them. |
+| `point_within_ui` | Derived QC | Whether `total` lies within finite UI bounds | Boolean; nullable | Null when bounds or the point estimate are unusable; missing does not mean false. |
+
+### 95% uncertainty intervals (schema v3)
+
+`ui_lower` and `ui_upper` are 95% uncertainty intervals for the estimated count (`total`) as returned by Cancer Today. They are saved by default from the same rate response, without extra HTTP requests or an `--include-ui` flag.
+
+Cancer Today currently returns UI fields for many all-age estimates, while age-restricted public rate responses may not provide UI fields. globocan-fetch preserves this upstream availability and does not infer age-specific intervals. The observed all-age Colorectum code 41 response also omits UI. Reconstructed 75–79, 80–84 and 85+ rows have null bounds, `ui_status=not_provided` and null `point_within_ui`; their manifest provenance lists the unavailable UI fields. Bounds are never copied, proportionally allocated, interpolated, added across cancer sites, or subtracted across cumulative age queries.
+
+- `complete`: finite bounds and a usable `total`, with `low <= total <= high`.
+- `point_outside_interval`: finite bounds and usable `total` outside that interval. A positive count with `0–0` UI is kept unchanged and flagged.
+- `incomplete`: `ui` is present but a bound is missing, null, nonnumeric or nonfinite; an unusable `total` also prevents the inside/outside QC check. Valid bounds are retained.
+- `not_provided`: the response has no `ui` field.
+
+Real-response examples (China, female breast-cancer incidence, checked 23 October 2026; other columns omitted):
+
+```csv
+country_code,sex,metric,cancer_code,age_label,total,ui_lower,ui_upper,ui_status,point_within_ui
+156,female,incidence,20,0-85+,375808,373555,378075,complete,True
+156,female,incidence,20,50-54,59957,,,not_provided,
+```
+
+Blank bounds mean the public API did not provide an uncertainty interval for that query, **not** that uncertainty is zero. Unusable supplied bounds are also null and distinguished by `incomplete`. The four fields are appended to the existing output columns; schema v3 refuses to resume a schema v2 output directory. Use a new directory to download v3 data; old v2 files are not migrated or overwritten.
 
 <!-- concept: cum-risk-fields-differ -->
 
@@ -685,7 +710,7 @@ Recalculating an ASR requires the appropriate standard-population weights.
 
 Each download directory contains a `manifest.json`.
 
-Manifest schema v2 records the identity and state of the local data snapshot, including:
+Manifest schema v3 records the identity and state of the local data snapshot, including:
 
 - software version;
 - schema version;
@@ -734,8 +759,17 @@ The currently observed request model is based on endpoints used by the public Ca
 Conceptually, the tool accesses metadata and rate endpoints under:
 
 ```text
-https://gco.iarc.fr/gateway_prod/api/globocan/v3/{year}/
+https://gco-api.iarc.fr/api/globocan/v3/{year}/
 ```
+
+The default endpoint follows the current Cancer Today frontend (checked 23 October 2026). To use an explicit alternative, pass `--api-base` to `download`, `verify`, `cancers` or `populations`, including the year in the URL:
+
+```bash
+globocan-fetch verify --year 2024 --api-base https://gco-api.iarc.fr/api/globocan/v3/2024
+```
+
+The actual base URL is saved in the manifest and dataset identity. There is no silent fallback to the former `gateway_prod` endpoint; changing the endpoint requires a new output directory. UI provenance is recorded as `uncertainty_intervals.source = gco_response.ui` with `inferred_when_missing = false`.
+
 
 Observed metadata resources include:
 

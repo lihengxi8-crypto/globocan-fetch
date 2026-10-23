@@ -60,4 +60,4 @@ def test_empty_high_age_query_reconstructs_and_records_provenance(tmp_path, monk
     assert provenance["direct_query_result"] == "empty"
     assert provenance["derived_from"] == ["0_14", "0_15"]
     assert provenance["derived_fields"] == ["total", "total_pop", "crude_rate", "asr", "cum_risk"]
-    assert provenance["unavailable_fields"] == ["cum_risk_74", "rank"]
+    assert provenance["unavailable_fields"] == ["cum_risk_74", "rank", "ui_lower", "ui_upper", "point_within_ui"]

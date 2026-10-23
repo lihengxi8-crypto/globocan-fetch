@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "globocan-fetch"
-version = "1.0.0"
+version = "1.1.0"
 description = "Reproducible downloader and data guide for GLOBOCAN Cancer Today estimates."
 readme = "README.md"
 requires-python = ">=3.10"

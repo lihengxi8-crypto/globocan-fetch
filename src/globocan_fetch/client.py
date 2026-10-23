@@ -6,6 +6,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import __version__
+
 import requests
 
 
@@ -34,15 +36,16 @@ class RateLimiter:
 
 class GCOClient:
     def __init__(self, year: int, *, requests_per_second: float = 1.0,
-                 timeout: float = 60, retries: int = 4, session: requests.Session | None = None):
+                 timeout: float = 60, retries: int = 4, session: requests.Session | None = None,
+                 api_base: str | None = None):
         self.year = year
         self.timeout = timeout
         self.retries = retries
-        self.base_url = f"https://gco.iarc.fr/gateway_prod/api/globocan/v3/{year}"
+        self.base_url = (api_base or f"https://gco-api.iarc.fr/api/globocan/v3/{year}").rstrip("/")
         self.limiter = RateLimiter(requests_per_second)
         self.session = session or requests.Session()
         self.session.headers.update({
-            "User-Agent": "globocan-fetch/1.0.0 (research client; contact: repository issues)",
+            "User-Agent": f"globocan-fetch/{__version__} (research client; contact: repository issues)",
             "Accept": "application/json",
             "Referer": "https://gco.iarc.who.int/today/en/dataviz/tables",
         })
@@ -89,3 +92,4 @@ class GCOClient:
         if not isinstance(data, dict) or not isinstance(data.get("dataset"), list):
             raise GCOError("Rate response has no list-valued 'dataset'")
         return data
+

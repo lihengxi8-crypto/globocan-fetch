@@ -3,9 +3,9 @@
 This project currently observes these endpoints from the GCO Cancer Today front end:
 
 ```text
-GET https://gco.iarc.fr/gateway_prod/api/globocan/v3/{year}/meta/populations/all/
-GET https://gco.iarc.fr/gateway_prod/api/globocan/v3/{year}/meta/cancers/all/
-GET https://gco.iarc.fr/gateway_prod/api/globocan/v3/{year}/data/rate/
+GET https://gco-api.iarc.fr/api/globocan/v3/{year}/meta/populations/all/
+GET https://gco-api.iarc.fr/api/globocan/v3/{year}/meta/cancers/all/
+GET https://gco-api.iarc.fr/api/globocan/v3/{year}/data/rate/
     {type}/{sex}/all/{cancer}/?ages_group={start}_{end}
 ```
 
@@ -72,7 +72,7 @@ The Cancer Today table changes the heading with the query. For World female brea
 
 Thus the UI “Cum. risk” corresponds to `cum_risk` for closed selected intervals; when the selected range ends in open 85+, `cum_risk` is absent and the UI shows “Cum. risk 74” using `cum_risk_74`. UI rounding accounts for the displayed precision. The page behavior confirms that `cum_risk_74` is not synonymous with the selected full interval risk.
 
-### Formula sanity check and v1 reconstruction rule
+### Formula sanity check and reconstruction candidate
 
 For World breast incidence 70–74 (`14_14`), API crude rate and ASR are both 179.93 per 100,000. The standard five-year formula gives `100 × (1 − exp(−5 × 179.93 / 100000)) = 0.8956%`, which rounds to the raw API risk 0.90%. World lung mortality gives 1.0794%, matching API 1.08%. For a reconstructed band, subtract adjacent cumulative counts and populations, recompute its rate, and apply the same formula for closed bands 75–79 and 80–84. This is a mathematical derivation from the standard cumulative-rate method and available API quantities; the direct single-band GCO rate endpoint is empty, so no independently returned 75–79 or 80–84 risk can be compared. A check via differenced cumulative risks (which themselves are rounded to 0.01 percentage point) differed by at most about 0.007 percentage point in the examples tested.
 
@@ -81,3 +81,16 @@ For a single age stratum, the normalized standard-population weight cancels, so 
 Reconstructed output records are marked in `manifest.json` with `source: "derived_cumulative_difference"`, `derived_from` cumulative age queries, the fields derived, and the unavailable fields. For 75–79 and 80–84, the derived fields are `total`, `total_pop`, `crude_rate`, `asr`, and `cum_risk`. For 85+, the derived fields are `total`, `total_pop`, `crude_rate`, and `asr`; `cum_risk`, `cum_risk_74`, and `rank` are unavailable. No derived value is copied from either cumulative-risk API field.
 
 The 2024 fallback runs only after an empty direct single-band response. Validation requires identical, unique population keys in adjacent cumulative responses, finite nonnegative counts and populations, and nonnegative count differences with a positive population difference. A validation or request error is recorded in `failed`, not `empty`, and does not create a derived table. If all three 75+ bands are requested together and all require reconstruction, they are checked in memory against the 75+ difference (`0_17` minus `0_14`) before any of the three tables is written. This is an arithmetic consistency check of the available cumulative responses, not independent confirmation by a separate upstream 75+ endpoint. Older manifest entries for the known 2024 high-age empty responses are retried; ordinary empty entries remain skipped.
+
+
+## Count uncertainty intervals (23 October 2026)
+
+The current Cancer Today frontend configures `https://gco-api.iarc.fr/api/globocan/v3/[vdb]/` and its table component reads `ui.low` and `ui.high` from the ordinary rate response. These are **95% uncertainty intervals for the estimated count (`total`)**, not intervals for ASR, crude rate or cumulative risk. The `show_ui=1` table-page parameter enables the implemented interval columns; it does not request a separate interval endpoint. The former `https://gco.iarc.fr/gateway_prod/api/globocan/v3/{year}` base remains historical provenance only; version 1.1.0 defaults to the current base and does not fall back to the old one.
+
+For China female breast-cancer incidence, `ages_group=0_17` returned `total=375808`, `ui.low=373555`, `ui.high=378075`; `10_10` returned `total=59957` without a `ui` key. The `0_14`, `14_14` and `10_17` breast-cancer requests also omitted `ui` for every returned population. Male lung-cancer mortality showed the same all-age versus `10_10` difference. The UI displays `-` for the missing bounds after age selection changes.
+
+A batch `data/rate/0_1/0_1_2/all/all/?ages_group=0_17` returned 52,836 rows for 238 populations and cancer codes 1–40. Of these, 164 zero-count rows had `ui.low=0` without `ui.high`; 442 positive-count rows had `ui.low=ui.high=0`, so their point estimates were outside the returned interval. A standalone recheck of population 68, cancer 4, both-sex incidence returned `total=3` and the same `0–0` bounds. These anomalies must remain unchanged and be flagged, not repaired.
+
+The corresponding batch with `ages_group=10_10` returned 52,836 rows, none with `ui`. Explicit all-age cancer 41 (Colorectum), with `group_CRC=1`, returned 1,428 rows without `ui`. No age-specific interval endpoint was found in the inspected frontend request builder and table component. These observations describe the public responses tested, not IARC's internal data holdings. UI bounds cannot be obtained by adding site bounds, subtracting cumulative bounds, or distributing all-age intervals across ages.
+
+Schema v3 appends `ui_lower`, `ui_upper`, `ui_status` and `point_within_ui` to the existing columns. All-age, age-restricted, code-41 and reconstructed rows share this schema. The tool parses only the current response, makes no extra UI request, and never infers missing bounds. Existing v2 output directories must be replaced by a new v3 output directory rather than resumed.

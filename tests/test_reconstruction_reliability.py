@@ -129,7 +129,7 @@ def test_legacy_high_age_empty_retried_but_ordinary_empty_skipped(monkeypatch, t
     output = tmp_path / "out"
     output.mkdir()
     (output / "manifest.json").write_text(json.dumps({
-        "schema_version": 2, "dataset_identity": _identity(2024, "https://example.test/2024", "csv"),
+        "schema_version": 3, "dataset_identity": _identity(2024, "https://example.test/2024", "csv"),
         "completed": [], "empty": ["incidence/female/20/14_14", "incidence/female/20/15_15"],
         "files": {}, "metadata": {"populations_sha256": "p", "cancers_sha256": "c"},
     }))

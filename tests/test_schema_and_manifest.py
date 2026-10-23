@@ -13,7 +13,7 @@ def test_writer_uses_the_public_schema():
         "country_code", "pop_label", "iso3", "pop_level", "grouping", "area_label", "who_region",
         "hdi_label", "income_label", "sex", "metric", "cancer_code", "cancer_label", "ICD",
         "age_start_idx", "age_end_idx", "age_label", "total", "total_pop", "asr", "crude_rate",
-        "cum_risk", "cum_risk_74", "rank",
+        "cum_risk", "cum_risk_74", "rank", "ui_lower", "ui_upper", "ui_status", "point_within_ui",
     ]
 
 
